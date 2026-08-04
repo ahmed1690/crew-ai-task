@@ -1,0 +1,56 @@
+fetch_test_cases_task:
+  description: >
+    اجلب كل test cases الموجودة تحت مشروع {project_key} في Jira.
+    لكل test case هات: العنوان، الوصف، الخطوات، والنتيجة المتوقعة.
+  expected_output: >
+    قائمة بكل test cases كما وردت من Jira (نص خام لكل واحدة).
+structure_test_cases_task:
+  description: >
+    حوّل كل test case جاي من المهمة السابقة إلى JSON بالشكل:
+    {{ "id": "...", "title": "...", "preconditions": "...",
+       "steps": ["..."], "expected_result": "..." }}
+    واحفظ كل test case في ملف منفصل داخل {reports_dir}/test-cases/
+    باسم test_case_<id>.json عن طريق Filesystem MCP.
+  expected_output: >
+    تأكيد بعدد الملفات اللي اتحفظت ومساراتها.
+execute_tests_task:
+  description: >
+    لكل ملف test case في {reports_dir}/test-cases/، افتح تطبيق
+    vericash ({app_package}) على {device_name} ونفّذ الخطوات واحدة
+    واحدة، وقارن النتيجة الفعلية بالـ expected_result.
+
+    ملحوظة تقنية مهمة جدًا جدًا: **جلسة Appium مفتوحة بالفعل** على الجهاز
+    قبل ما تبدأ — **ممنوع تستخدم appium_session_management بـ
+    action="create" خالص**، الجلسة موجودة ومفتوحة. لو محتاج تتأكد،
+    استخدم action="list" فقط. ابدأ على طول باستخدام appium_app_lifecycle
+    (action="activate", id="{app_package}") لفتح تطبيق vericash على
+    الجلسة المفتوحة دي.
+
+    ملحوظات تقنية تانية (تنطبق على كل أدوات Filesystem و Appium):
+    أي بارامتر اختياري (زي head, tail, keepData, seconds, sessionId,
+    remoteServerUrl) لو مش محتاجه، ابعته كـ **نص فاضي ""** مش النص
+    "null" ومش object فاضي — النص الفاضي هو اللي بيشتغل صح مع الأداة دي.
+
+    - لو نجح test case: خد screenshot للشاشة النهائية واحفظه في
+      {reports_dir}/<test_case_id>/success.png
+    - لو فشل test case: أعد تشغيل الفلو من أول خطوة، وشغّل screen
+      recording طول فترة إعادة المحاولة، واحفظه في
+      {reports_dir}/<test_case_id>/retry_recording.mp4
+  expected_output: >
+    لكل test case: status (pass/fail)، مسار الدليل (screenshot أو
+    recording)، وأي رسالة خطأ لو فشل.
+handle_failures_task:
+  description: >
+    راجع نتائج execute_tests_task، ولأي test case لسه فاشل بعد
+    إعادة المحاولة، وثّق سبب الفشل بالتفصيل ولخّص الخطوة اللي
+    فشلت عندها بالظبط.
+  expected_output: >
+    قائمة بالـ test cases الفاشلة مع سبب الفشل التفصيلي لكل واحدة.
+finalize_report_task:
+  description: >
+    اجمع نتائج كل test cases (من execute_tests_task و
+    handle_failures_task) في تقرير Markdown واحد فيه: عدد الناجح،
+    عدد الفاشل، تفاصيل كل test case مع رابط الدليل البصري بتاعه،
+    واحفظ التقرير في {reports_dir}/final_report.md
+  expected_output: >
+    مسار ملف التقرير النهائي وملخص سريع للنتائج.

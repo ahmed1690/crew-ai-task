@@ -1,0 +1,11 @@
+{
+  "id": "DEMO-1",
+  "title": "Open vericash app and verify home screen loads",
+  "preconditions": "App is installed on the device and device is unlocked",
+  "steps": [
+    "Launch the vericash app",
+    "Wait for the home screen to load",
+    "Verify the home screen is visible"
+  ],
+  "expected_result": "The vericash home screen is displayed successfully"
+}
