@@ -1,12 +1,13 @@
 """
-تعريف اتصالات الـ 3 MCP servers: Atlassian (Jira), Appium, Filesystem.
-كل واحد بيرجع server params object تستخدمها MCPServerAdapter من crewai_tools.
+Defines the connections for the 3 MCP servers: Atlassian (Jira), Appium,
+and Filesystem. Each one returns a server params object used by
+MCPServerAdapter from crewai_tools.
 
-توثيق مرجعي:
+Reference docs:
 - crewai-tools MCP support: https://docs.crewai.com/en/mcp/overview
 - Atlassian Remote MCP: https://www.atlassian.com/platform/remote-mcp-server
 - Filesystem MCP (official): https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
-- Appium MCP: https://github.com/appium/mcp-server (أو أي implementation بديل متاح عندك)
+- Appium MCP: https://github.com/appium/mcp-server (or any alternative implementation you have)
 """
 
 import os
@@ -16,8 +17,8 @@ from mcp import StdioServerParameters
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# 1) Atlassian MCP (Jira) — server بيتوصله عن طريق SSE (remote, بيحتاج OAuth
-#    login أول مرة من المتصفح لما تشغل الكريو).
+# 1) Atlassian MCP (Jira) — connected via streamable-http (remote, requires
+#    a one-time OAuth login in the browser when the crew is first run).
 # ---------------------------------------------------------------------------
 ATLASSIAN_MCP_SERVER = {
     "url": os.getenv("ATLASSIAN_MCP_URL", "https://mcp.atlassian.com/v1/mcp/authv2"),
@@ -25,21 +26,28 @@ ATLASSIAN_MCP_SERVER = {
 }
 
 # ---------------------------------------------------------------------------
-# 2) Appium MCP — server بيتشغل local عن طريق stdio (بيحتاج appium server
-#    شغال + emulator شغال على نفس الجهاز).
+# 2) Appium MCP — run directly via node on the installed file (instead of
+#    npx, to avoid any package-resolution overhead/delay). The default path
+#    is built automatically from the current Windows username.
 # ---------------------------------------------------------------------------
+_default_appium_mcp_path = os.path.join(
+    os.path.expanduser("~"),
+    "AppData", "Roaming", "npm", "node_modules", "appium-mcp", "dist", "index.js",
+)
+
 APPIUM_MCP_SERVER = StdioServerParameters(
-    command=os.getenv("APPIUM_MCP_COMMAND", "npx"),
-    args=os.getenv("APPIUM_MCP_ARGS", "-y,appium-mcp").split(","),
+    command=os.getenv("APPIUM_MCP_COMMAND", "node"),
+    args=[os.getenv("APPIUM_MCP_SCRIPT_PATH", _default_appium_mcp_path)],
     env={
         **os.environ,
         "APPIUM_SERVER_URL": os.getenv("APPIUM_SERVER_URL", "http://127.0.0.1:4723"),
+        "ANDROID_HOME": os.getenv("ANDROID_HOME", os.environ.get("ANDROID_HOME", "")),
     },
 )
 
 # ---------------------------------------------------------------------------
-# 3) Filesystem MCP — server بيتشغل local عن طريق stdio، بيدّيله الـ dir
-#    اللي مسموح يقرا/يكتب فيه بس (الـ reports dir).
+# 3) Filesystem MCP — run locally via stdio, given only the one directory
+#    it's allowed to read/write (the reports dir).
 # ---------------------------------------------------------------------------
 FILESYSTEM_MCP_SERVER = StdioServerParameters(
     command=os.getenv("FILESYSTEM_MCP_COMMAND", "npx"),

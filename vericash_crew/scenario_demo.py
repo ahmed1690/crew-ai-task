@@ -1,20 +1,23 @@
 """
 scenario_demo.py
 =================
-سيناريو تجريبي عشان نثبت إن باقي الفلو (Appium MCP + Filesystem MCP +
-الـ agents) شغال end-to-end، من غير ما نستنى Atlassian/Jira MCP.
+Demo scenario to prove that the rest of the flow (Appium MCP +
+Filesystem MCP + the agents) works end-to-end, without waiting on
+the Atlassian/Jira MCP.
 
-بيستخدم test case يدوي جاهز في reports/test-cases/test_case_DEMO-1.json
-بدل ما يجيبه من Jira، وبعدين يكمل نفس الفلو بالظبط:
+Uses a ready-made manual test case at
+reports/test-cases/test_case_DEMO-1.json instead of fetching one
+from Jira, then continues with the exact same flow:
 execute -> handle_failures -> finalize_report
 
-تشغيل:
+Run:
     python scenario_demo.py
 """
 
 import os
 import json
 import yaml
+from datetime import datetime
 from pathlib import Path
 
 from crewai import Agent, Task, Crew, Process, LLM
@@ -48,9 +51,27 @@ llm = LLM(
 )
 
 
+def log_step(step):
+    """
+    Called after every single agent step (thought, tool call, tool
+    result). Writes a clean plain-text line to reports/execution_log.txt
+    so you can see exactly where it got stuck, without the garbled box
+    drawing from the terminal UI.
+    """
+    log_path = os.path.join(REPORTS_DIR, "execution_log.txt")
+    ts = datetime.now().strftime("%H:%M:%S")
+    tool = getattr(step, "tool", None)
+    tool_input = getattr(step, "tool_input", None)
+    result = getattr(step, "result", None) or getattr(step, "text", None)
+    line = f"[{ts}] tool={tool!r} input={tool_input!r} result={str(result)[:300]!r}\n"
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line)
+    print(f">>> STEP LOG: {line.strip()}")
+
+
 def run_scenario():
-    # هنا بس Appium + Filesystem (من غير Atlassian) عشان دي الحاجة اللي
-    # عايزين نثبتها دلوقتي
+    # Only Appium + Filesystem here (no Atlassian), since that's what
+    # we're trying to prove works right now.
     with MCPServerAdapter(
         [APPIUM_MCP_SERVER, FILESYSTEM_MCP_SERVER], connect_timeout=90
     ) as all_tools:
@@ -62,16 +83,17 @@ def run_scenario():
         appium_tools = tools_for("appium", "tap", "swipe", "screenshot", "record", "element")
 
         # ---------------------------------------------------------------
-        # نفتح جلسة Appium إحنا بالكود مباشرة (مش عن طريق الـ LLM) عشان
-        # نتجنب مشاكل تنسيق الـ JSON المتكررة، وبعدين نسيب الـ Agent
-        # يكمل شغله على جلسة جاهزة ومفتوحة.
+        # Open the Appium session directly in code (not via the LLM) to
+        # avoid the repeated JSON-formatting issues, then let the Agent
+        # continue its work on an already-open session.
         # ---------------------------------------------------------------
         session_tool = next(t for t in all_tools if t.name == "appium_session_management")
+        # App is confirmed installed now — target vericash directly, no
+        # explicit appActivity (let the driver auto-resolve it).
         session_capabilities = json.dumps({
             "platformName": "Android",
             "appium:deviceName": ANDROID_DEVICE_NAME,
             "appium:appPackage": ANDROID_APP_PACKAGE,
-            "appium:appActivity": ".MainActivity",
             "appium:noReset": True,
         })
         print(">>> Pre-creating Appium session directly (bypassing LLM formatting)...")
@@ -106,6 +128,7 @@ def run_scenario():
             process=Process.sequential,
             max_rpm=2,
             cache=False,
+            step_callback=log_step,
             verbose=True,
         )
 
@@ -121,8 +144,12 @@ def run_scenario():
 
 if __name__ == "__main__":
     os.makedirs(os.path.join(REPORTS_DIR, "test-cases"), exist_ok=True)
+    log_path = os.path.join(REPORTS_DIR, "execution_log.txt")
+    open(log_path, "w", encoding="utf-8").close()  # start a fresh log each run
+    print(f">>> Step-by-step log will be written to: {log_path}")
     print(">>> Running demo scenario (Jira skipped, using manual test case DEMO-1)...")
     output = run_scenario()
     print("\n=== Scenario Result ===\n")
     print(output)
     print(f"\nCheck {REPORTS_DIR}\\final_report.md for the output.")
+    print(f"Check {log_path} for the step-by-step log.")

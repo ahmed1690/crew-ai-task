@@ -1,14 +1,14 @@
 """
 vericash test-automation crew
 ==============================
-CrewAI crew بيشغل فلو الاختبار الآلي زي الدياجرام:
+CrewAI crew that runs the automated test flow as shown in the diagram:
 Jira -> structure -> execute on emulator -> handle failures -> report
 
-تشغيل:
+Run:
     python crew.py
 
-المتطلبات: .env مظبوط (انسخه من .env.example) + الـ 3 MCP servers
-قادرة تشتغل (راجع README.md).
+Requirements: .env configured (copy from .env.example) + the 3 MCP
+servers able to run (see README.md).
 """
 
 import os
@@ -30,8 +30,8 @@ from mcp_servers import (
 )
 
 # ---------------------------------------------------------------------------
-# LLM: NVIDIA API (OpenAI-compatible endpoint) — الـ base_url و الموديل
-# بيتقروا من .env، مفيش أي secret مكتوب هنا في الكود.
+# LLM: NVIDIA API (OpenAI-compatible endpoint) — base_url and model are
+# read from .env; no secret is hardcoded here in the code.
 # ---------------------------------------------------------------------------
 llm = LLM(
     model=f"openai/{os.getenv('NVIDIA_MODEL', 'z-ai/glm-5.2')}",
@@ -52,9 +52,10 @@ with open(CONFIG_DIR / "agents.yaml", "r", encoding="utf-8") as f:
 with open(CONFIG_DIR / "tasks.yaml", "r", encoding="utf-8") as f:
     tasks_cfg = yaml.safe_load(f)
 
-# "skill files" اللي في الدياجرام = Knowledge source بيتقرا من مجلد knowledge/
-# حط فيه أي ملفات .md/.txt فيها إرشادات إضافية (مثلاً: إزاي تتعامل مع
-# vericash تحديدًا، أو conventions معينة للـ test cases)
+# The "skill files" from the diagram = a Knowledge source read from the
+# knowledge/ folder. Put any .md/.txt files there with extra guidance
+# (e.g. how to handle vericash specifically, or conventions for test
+# cases).
 knowledge_sources = []
 knowledge_dir = BASE_DIR / "knowledge"
 if knowledge_dir.exists() and any(knowledge_dir.iterdir()):
@@ -64,14 +65,15 @@ if knowledge_dir.exists() and any(knowledge_dir.iterdir()):
 
 
 def build_crew():
-    # بيفتح اتصال بالـ 3 MCP servers مع بعض؛ الأدوات بترجع كـ list واحدة
-    # وكل agent بياخد الأدوات اللي محتاجها منها.
+    # Opens a connection to all 3 MCP servers together; the tools come
+    # back as one combined list and each agent gets the tools it needs
+    # from it.
     with MCPServerAdapter(
         [ATLASSIAN_MCP_SERVER, APPIUM_MCP_SERVER, FILESYSTEM_MCP_SERVER], connect_timeout=90
     ) as all_tools:
 
         def tools_for(*keywords):
-            """يفلتر الأدوات اللي اسمها بيحتوي على أي keyword من دول."""
+            """Filter tools whose name contains any of these keywords."""
             return [t for t in all_tools if any(k.lower() in t.name.lower() for k in keywords)]
 
         jira_tools = tools_for("jira", "atlassian", "issue")

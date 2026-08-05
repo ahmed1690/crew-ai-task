@@ -1,56 +1,64 @@
 fetch_test_cases_task:
   description: >
-    اجلب كل test cases الموجودة تحت مشروع {project_key} في Jira.
-    لكل test case هات: العنوان، الوصف، الخطوات، والنتيجة المتوقعة.
+    Fetch all test cases located under the {project_key} project in Jira.
+    For each test case, get: the title, description, steps, and expected result.
   expected_output: >
-    قائمة بكل test cases كما وردت من Jira (نص خام لكل واحدة).
+    A list of all test cases exactly as received from Jira (raw text for each).
+
 structure_test_cases_task:
   description: >
-    حوّل كل test case جاي من المهمة السابقة إلى JSON بالشكل:
+    Convert each test case coming from the previous task into JSON in the following format:
     {{ "id": "...", "title": "...", "preconditions": "...",
        "steps": ["..."], "expected_result": "..." }}
-    واحفظ كل test case في ملف منفصل داخل {reports_dir}/test-cases/
-    باسم test_case_<id>.json عن طريق Filesystem MCP.
+    And save each test case in a separate file inside {reports_dir}/test-cases/
+    named test_case_<id>.json using the Filesystem MCP.
   expected_output: >
-    تأكيد بعدد الملفات اللي اتحفظت ومساراتها.
+    Confirmation with the number of saved files and their exact paths.
+
 execute_tests_task:
   description: >
-    لكل ملف test case في {reports_dir}/test-cases/، افتح تطبيق
-    vericash ({app_package}) على {device_name} ونفّذ الخطوات واحدة
-    واحدة، وقارن النتيجة الفعلية بالـ expected_result.
+    For each test case file in {reports_dir}/test-cases/, open the vericash
+    application ({app_package}) on {device_name} and execute the steps one
+    by one, comparing the actual result with the expected_result.
 
-    ملحوظة تقنية مهمة جدًا جدًا: **جلسة Appium مفتوحة بالفعل** على الجهاز
-    قبل ما تبدأ — **ممنوع تستخدم appium_session_management بـ
-    action="create" خالص**، الجلسة موجودة ومفتوحة. لو محتاج تتأكد،
-    استخدم action="list" فقط. ابدأ على طول باستخدام appium_app_lifecycle
-    (action="activate", id="{app_package}") لفتح تطبيق vericash على
-    الجلسة المفتوحة دي.
+    Very important technical note: The Appium session is already open, and the Vericash app is ALREADY LAUNCHED and visible on the device screen.
+    - DO NOT use the `appium_session_management` tool.
+    - DO NOT use the `appium_app_lifecycle` tool.
+    Start your work IMMEDIATELY by interacting with the screen. You can use `appium_screenshot` to see the current screen, and then use coordinates with `appium_gesture` or `appium_perform_actions` to tap the buttons as described in the test steps.
 
-    ملحوظات تقنية تانية (تنطبق على كل أدوات Filesystem و Appium):
-    أي بارامتر اختياري (زي head, tail, keepData, seconds, sessionId,
-    remoteServerUrl) لو مش محتاجه، ابعته كـ **نص فاضي ""** مش النص
-    "null" ومش object فاضي — النص الفاضي هو اللي بيشتغل صح مع الأداة دي.
+    Note regarding screen interaction: **If the step has specific (x, y) coordinates
+    explicitly written**, use the tap/gesture tool with these coordinates directly
+    (like appium_gesture or appium_perform_actions with a tap action and the mentioned
+    x/y) — **do not try to search for the button by name or using find_element at all**
+    if coordinates are available, because this is much faster and more reliable.
+    After each tap, wait a second or two (use any available wait tool or repeat
+    appium_screenshot to ensure the action is complete) before the next tap.
 
-    - لو نجح test case: خد screenshot للشاشة النهائية واحفظه في
+    Other technical notes (applicable to all Filesystem and Appium tools):
+    If there is an optional parameter that you do not need, YOU MUST OMIT IT ENTIRELY from the tool call payload. DO NOT send `null`, and DO NOT send empty strings `""`. Only include parameters that have actual valid values.
+
+    - If a test case succeeds: Take a screenshot of the final screen and save it in
       {reports_dir}/<test_case_id>/success.png
-    - لو فشل test case: أعد تشغيل الفلو من أول خطوة، وشغّل screen
-      recording طول فترة إعادة المحاولة، واحفظه في
+    - If a test case fails: Restart the flow from the first step, run a screen
+      recording for the entire duration of the retry, and save it in
       {reports_dir}/<test_case_id>/retry_recording.mp4
   expected_output: >
-    لكل test case: status (pass/fail)، مسار الدليل (screenshot أو
-    recording)، وأي رسالة خطأ لو فشل.
+    For each test case: status (pass/fail), the evidence path (screenshot or
+    recording), and any error messages if it failed.
+
 handle_failures_task:
   description: >
-    راجع نتائج execute_tests_task، ولأي test case لسه فاشل بعد
-    إعادة المحاولة، وثّق سبب الفشل بالتفصيل ولخّص الخطوة اللي
-    فشلت عندها بالظبط.
+    Review the results of execute_tests_task, and for any test case that is
+    still failing after the retry, document the exact reason for failure in detail
+    and summarize the exact step where it failed.
   expected_output: >
-    قائمة بالـ test cases الفاشلة مع سبب الفشل التفصيلي لكل واحدة.
+    A list of the failed test cases with a detailed failure reason for each.
+
 finalize_report_task:
   description: >
-    اجمع نتائج كل test cases (من execute_tests_task و
-    handle_failures_task) في تقرير Markdown واحد فيه: عدد الناجح،
-    عدد الفاشل، تفاصيل كل test case مع رابط الدليل البصري بتاعه،
-    واحفظ التقرير في {reports_dir}/final_report.md
+    Compile the results of all test cases (from execute_tests_task and
+    handle_failures_task) into a single Markdown report containing: the total
+    number of passes, the total number of failures, and the details of each test
+    case with a link to its visual evidence. Save the report in {reports_dir}/final_report.md
   expected_output: >
-    مسار ملف التقرير النهائي وملخص سريع للنتائج.
+    The exact path of the final report file and a quick summary of the results.
