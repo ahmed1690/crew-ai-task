@@ -44,8 +44,7 @@ llm = LLM(
     model=f"openai/{os.getenv('NVIDIA_MODEL', 'z-ai/glm-5.2')}",
     base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
     api_key=os.getenv("NVIDIA_API_KEY"),
-    temperature=1,
-    top_p=1,
+    temperature=0.2,
     max_tokens=16384,
     seed=42,
 )
@@ -76,11 +75,36 @@ def run_scenario():
         [APPIUM_MCP_SERVER, FILESYSTEM_MCP_SERVER], connect_timeout=90
     ) as all_tools:
 
+        def sanitize_tool(tool):
+            # crewai_tools builds a pydantic schema from the MCP inputSchema;
+            # omitted optional params default to None and get serialized as
+            # `null`, which the Appium MCP server (zod .optional()) rejects.
+            # Strip None/"" so omitted params stay truly absent.
+            orig_run = tool._run
+
+            def clean_run(*args, **kwargs):
+                kwargs = {k: v for k, v in kwargs.items() if v is not None and v != ""}
+                return orig_run(*args, **kwargs)
+
+            tool._run = clean_run
+            return tool
+
+        all_tools = [sanitize_tool(t) for t in all_tools]
+
         def tools_for(*keywords):
             return [t for t in all_tools if any(k.lower() in t.name.lower() for k in keywords)]
 
         fs_tools = tools_for("file", "read", "write", "directory")
-        appium_tools = tools_for("appium", "tap", "swipe", "screenshot", "record", "element")
+        # Whitelist exact Appium tools. A loose "appium" keyword also pulls
+        # appium_generate_tests / appium_ai / appium_session_management /
+        # appium_app_lifecycle, which confuses the executor.
+        APPIUM_ALLOWED = {
+            "appium_screenshot",
+            "appium_gesture",
+            "appium_perform_actions",
+            "appium_screen_recording",
+        }
+        appium_tools = [t for t in all_tools if t.name in APPIUM_ALLOWED]
 
         # ---------------------------------------------------------------
         # Open the Appium session directly in code (not via the LLM) to
@@ -110,7 +134,11 @@ def run_scenario():
         failure_handler = Agent(config=agents_cfg["failure_handler"], tools=appium_tools + fs_tools, llm=llm)
         reporter = Agent(config=agents_cfg["reporter"], tools=fs_tools, llm=llm)
 
-        execute_tests_task = Task(config=tasks_cfg["execute_tests_task"], agent=test_executor)
+        execute_tests_task = Task(
+    description="For each test case file in {reports_dir}/test-cases/, open the vericash application on {device_name} and execute the steps one by one.",
+    expected_output="Status of test cases (pass/fail) and evidence paths.",
+    agent=test_executor
+)
         handle_failures_task = Task(
             config=tasks_cfg["handle_failures_task"],
             agent=failure_handler,
@@ -126,7 +154,7 @@ def run_scenario():
             agents=[test_executor, failure_handler, reporter],
             tasks=[execute_tests_task, handle_failures_task, finalize_report_task],
             process=Process.sequential,
-            max_rpm=2,
+            max_rpm=10,
             cache=False,
             step_callback=log_step,
             verbose=True,

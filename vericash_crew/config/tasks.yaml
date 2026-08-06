@@ -4,6 +4,7 @@ fetch_test_cases_task:
     For each test case, get: the title, description, steps, and expected result.
   expected_output: >
     A list of all test cases exactly as received from Jira (raw text for each).
+  agent: test_case_fetcher
 
 structure_test_cases_task:
   description: >
@@ -14,6 +15,9 @@ structure_test_cases_task:
     named test_case_<id>.json using the Filesystem MCP.
   expected_output: >
     Confirmation with the number of saved files and their exact paths.
+  agent: test_structurer
+  context:
+    - fetch_test_cases_task
 
 execute_tests_task:
   description: >
@@ -24,35 +28,56 @@ execute_tests_task:
     Very important technical note: The Appium session is already open, and the Vericash app is ALREADY LAUNCHED and visible on the device screen.
     - DO NOT use the `appium_session_management` tool.
     - DO NOT use the `appium_app_lifecycle` tool.
-    Start your work IMMEDIATELY by interacting with the screen. You can use `appium_screenshot` to see the current screen, and then use coordinates with `appium_gesture` or `appium_perform_actions` to tap the buttons as described in the test steps.
-
-    Note regarding screen interaction: **If the step has specific (x, y) coordinates
-    explicitly written**, use the tap/gesture tool with these coordinates directly
-    (like appium_gesture or appium_perform_actions with a tap action and the mentioned
-    x/y) — **do not try to search for the button by name or using find_element at all**
-    if coordinates are available, because this is much faster and more reliable.
-    After each tap, wait a second or two (use any available wait tool or repeat
-    appium_screenshot to ensure the action is complete) before the next tap.
+    Start your work IMMEDIATELY by interacting with the screen. Do NOT use fixed
+    (x, y) coordinates for taps. Instead, locate each element using `find_element`
+    (by resource-id, accessibility id, or visible text as described in the step),
+    then interact with the located element via `appium_gesture` or
+    `appium_perform_actions`. Use `appium_screenshot` before each step to see the
+    current screen and confirm the right element is present before interacting
+    with it.
+    After each action, wait a second or two (use any available wait tool or repeat
+    appium_screenshot to ensure the action is complete) before moving to the next step.
 
     Other technical notes (applicable to all Filesystem and Appium tools):
     If there is an optional parameter that you do not need, YOU MUST OMIT IT ENTIRELY from the tool call payload. DO NOT send `null`, and DO NOT send empty strings `""`. Only include parameters that have actual valid values.
 
     - If a test case succeeds: Take a screenshot of the final screen and save it in
       {reports_dir}/<test_case_id>/success.png
-    - If a test case fails: Restart the flow from the first step, run a screen
-      recording for the entire duration of the retry, and save it in
-      {reports_dir}/<test_case_id>/retry_recording.mp4
+    - If a test case fails on this first attempt: do NOT retry it yourself. Simply
+      mark it as failed and record the exact step where it failed and the reason.
+      The retry with screen recording is handled separately by the Failure Recovery
+      Agent in the next task.
   expected_output: >
-    For each test case: status (pass/fail), the evidence path (screenshot or
-    recording), and any error messages if it failed.
+    For each test case: status on this first attempt (pass/fail), the evidence
+    path for passes (success.png), and the failing step + reason for failures.
+  agent: test_executor
+  context:
+    - structure_test_cases_task
 
 handle_failures_task:
   description: >
-    Review the results of execute_tests_task, and for any test case that is
-    still failing after the retry, document the exact reason for failure in detail
-    and summarize the exact step where it failed.
+    For every test case that came back as "failed" from execute_tests_task,
+    restart the flow from the very first step and run a full screen recording
+    for the entire duration of this retry, saving it to
+    {reports_dir}/<test_case_id>/retry_recording.mp4. Follow the same Appium
+    interaction rules as execution (locate each element with `find_element`
+    rather than fixed coordinates, wait a second or two between actions, confirm
+    each action with a screenshot when needed).
+
+    Perform exactly ONE retry per failed test case. If the test case passes on
+    this retry, mark it as passed (recovered) and keep the recording as evidence.
+    If it still fails, stop retrying, and document in detail the exact reason for
+    failure and the exact step where it failed.
+
+    Other technical notes (applicable to all Filesystem and Appium tools):
+    If there is an optional parameter that you do not need, YOU MUST OMIT IT ENTIRELY from the tool call payload. DO NOT send `null`, and DO NOT send empty strings `""`. Only include parameters that have actual valid values.
   expected_output: >
-    A list of the failed test cases with a detailed failure reason for each.
+    For each retried test case: final status (pass/fail), the path to
+    retry_recording.mp4, and — if still failing — a detailed failure reason and
+    the exact step where it failed.
+  agent: failure_handler
+  context:
+    - execute_tests_task
 
 finalize_report_task:
   description: >
@@ -62,3 +87,8 @@ finalize_report_task:
     case with a link to its visual evidence. Save the report in {reports_dir}/final_report.md
   expected_output: >
     The exact path of the final report file and a quick summary of the results.
+  agent: reporter
+  context:
+    - execute_tests_task
+    - handle_failures_task
+  output_file: '{reports_dir}/final_report.md'

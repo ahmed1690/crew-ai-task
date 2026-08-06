@@ -14,7 +14,7 @@ import os
 from dotenv import load_dotenv
 from mcp import StdioServerParameters
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ---------------------------------------------------------------------------
 # 1) Atlassian MCP (Jira) — connected via streamable-http (remote, requires
