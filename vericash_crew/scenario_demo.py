@@ -134,7 +134,11 @@ def run_scenario():
         failure_handler = Agent(config=agents_cfg["failure_handler"], tools=appium_tools + fs_tools, llm=llm)
         reporter = Agent(config=agents_cfg["reporter"], tools=fs_tools, llm=llm)
 
-        execute_tests_task = Task(config=tasks_cfg["execute_tests_task"], agent=test_executor)
+        execute_tests_task = Task(
+    description="For each test case file in {reports_dir}/test-cases/, open the vericash application on {device_name} and execute the steps one by one.",
+    expected_output="Status of test cases (pass/fail) and evidence paths.",
+    agent=test_executor
+)
         handle_failures_task = Task(
             config=tasks_cfg["handle_failures_task"],
             agent=failure_handler,
